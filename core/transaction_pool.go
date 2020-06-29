@@ -22,11 +22,11 @@ import (
 	"sync"
 	"time"
 
+	corepb "github.com/nebulasio/go-nebulas/core/pb"
 	"github.com/nebulasio/go-nebulas/core/state"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/nebulasio/go-nebulas/common/sorted"
-	"github.com/nebulasio/go-nebulas/core/pb"
 	"github.com/nebulasio/go-nebulas/net"
 	"github.com/nebulasio/go-nebulas/util"
 	"github.com/nebulasio/go-nebulas/util/byteutils"
@@ -139,6 +139,8 @@ func (pool *TransactionPool) Start() {
 		"size": pool.size,
 	}).Info("Starting TransactionPool...")
 
+	pool.access.Start()
+
 	go pool.loop()
 }
 
@@ -147,6 +149,8 @@ func (pool *TransactionPool) Stop() {
 	logging.CLog().WithFields(logrus.Fields{
 		"size": pool.size,
 	}).Info("Stop TransactionPool.")
+
+	pool.access.Stop()
 
 	pool.quitCh <- 0
 }
@@ -205,12 +209,12 @@ func (pool *TransactionPool) loop() {
 			}
 
 			if err := pool.PushAndRelay(tx); err != nil {
-				logging.VLog().WithFields(logrus.Fields{
-					"func":        "TxPool.loop",
-					"messageType": msg.MessageType(),
-					"transaction": tx,
-					"err":         err,
-				}).Debug("Failed to push a tx into tx pool.")
+				//logging.VLog().WithFields(logrus.Fields{
+				//	"func":        "TxPool.loop",
+				//	"messageType": msg.MessageType(),
+				//	"transaction": tx,
+				//	"err":         err,
+				//}).Debug("Failed to push a tx into tx pool.")
 				continue
 			}
 		}
@@ -260,7 +264,12 @@ func (pool *TransactionPool) PushAndBroadcast(tx *Transaction) error {
 		return err
 	}
 
-	pool.ns.Broadcast(MessageTypeNewTx, tx, net.MessagePriorityNormal)
+	priority := net.MessagePriorityNormal
+	if tx.Type() == TxPayloadPodType {
+		priority = net.MessagePriorityHigh
+	}
+
+	pool.ns.Broadcast(MessageTypeNewTx, tx, priority)
 	return nil
 }
 

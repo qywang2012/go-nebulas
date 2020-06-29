@@ -151,6 +151,14 @@ type Compatibility interface {
 	TransferFromContractFailureEventRecordableHeight2() uint64
 	NvmValueCheckUpdateHeight() uint64
 	NbreAvailableHeight() uint64
+	Nrc20SecurityCheckHeight() uint64
+	NbreSplitHeight() uint64
+	NodeUpdateHeight() uint64
+
+	NodeStartSerial() uint64
+	NodeAccessContract() *Address
+	NodePodContract() *Address
+	NodeGovernanceContract() *Address
 }
 
 // NebCompatibility ..
@@ -451,4 +459,39 @@ func NvmValueCheckUpdateHeight(blockHeight uint64) bool {
 // NbreAvailableHeight ..
 func NbreAvailableHeight(blockHeight uint64) bool {
 	return blockHeight >= NebCompatibility.NbreAvailableHeight()
+}
+
+// Nrc20SecurityCheckAtHeight ..
+func Nrc20SecurityCheckAtHeight(blockHeight uint64) bool {
+	return blockHeight >= NebCompatibility.Nrc20SecurityCheckHeight()
+}
+
+// NbreSplitAtHeight ..
+func NbreSplitAtHeight(blockHeight uint64) bool {
+	return blockHeight >= NebCompatibility.NbreSplitHeight()
+}
+
+// NodeUpdateAtHeight ..
+func NodeUpdateAtHeight(blockHeight uint64) bool {
+	return blockHeight >= NebCompatibility.NodeUpdateHeight()
+}
+
+// NodeStartSerial ..
+func NodeStartSerial() uint64 {
+	return NebCompatibility.NodeStartSerial()
+}
+
+// NodeAccessContract ..
+func NodeAccessContract() *Address {
+	return NebCompatibility.NodeAccessContract()
+}
+
+// NodePodContract ..
+func NodePodContract() *Address {
+	return NebCompatibility.NodePodContract()
+}
+
+// NodeGovernanceContract ..
+func NodeGovernanceContract() *Address {
+	return NebCompatibility.NodeGovernanceContract()
 }

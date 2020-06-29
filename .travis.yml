@@ -1,21 +1,18 @@
+dist: xenial
 language: go
 go:
-- 1.11.x
-os:
-- linux
-env:
-- LD_LIBRARY_PATH=$GOPATH/src/github.com/nebulasio/go-nebulas/native-lib:$LD_LIBRARY_PATH
+- 1.12.x
 
 before_install:
-- sudo apt-get update
-- sudo apt-get install -y libsnappy-dev zlib1g-dev libbz2-dev liblz4-dev
+- sudo apt-get update -qq
+- sudo apt-get install -y libsnappy-dev zlib1g-dev libbz2-dev liblz4-dev -qq
 
 install:
-- wget http://develop-center.oss-cn-zhangjiakou.aliyuncs.com/setup/vendor/vendor.tar.gz
-- tar -zxvf vendor.tar.gz
 - go get github.com/tebeka/go2xunit
 script:
-- source install-native-libs.sh
+- export GO111MODULE=on
+- ./install-rocksdb.sh
+- source setup.sh
 - make build
 notifications:
   slack:

@@ -35,10 +35,25 @@ type CompatibilityLocal struct {
 	nvmValueCheckUpdateHeight uint64
 
 	nbreAvailableHeight uint64
+
+	nrc20SecurityCheckHeight uint64
+
+	nbreSplitHeight uint64
+
+	nodeUpdateHeight uint64
+
+	nodeStartSerial        uint64
+	nodeAccessContract     *Address
+	nodePodContract        *Address
+	nodeGovernanceContract *Address
 }
 
 // NewCompatibilityLocal ..
 func NewCompatibilityLocal() Compatibility {
+	nodeAccessContract, _ := AddressParse("n1wRERsLCoGsh2YZu7Qy74iFrraJwnV9gKX")
+	nodePodContract, _ := AddressParse("n1xS3BoziPPidb5nXDmGfH9pb4RHQMfyBe9")
+	nodeGovernanceContract, _ := AddressParse("n1tD8Lh4vxWpha1K1hmZ7ZuCg86THvFyYwr")
+
 	return &CompatibilityLocal{
 		transferFromContractEventRecordableHeight:         2,
 		acceptFuncAvailableHeight:                         2,
@@ -64,6 +79,14 @@ func NewCompatibilityLocal() Compatibility {
 		nvmGasLimitWithoutTimeoutHeight: 2,
 		nvmValueCheckUpdateHeight:       2,
 		nbreAvailableHeight:             2,
+		nrc20SecurityCheckHeight:        2,
+		nbreSplitHeight:                 3,
+		nodeUpdateHeight:                3,
+
+		nodeStartSerial:        0,
+		nodeAccessContract:     nodeAccessContract,
+		nodePodContract:        nodePodContract,
+		nodeGovernanceContract: nodeGovernanceContract,
 	}
 }
 
@@ -150,4 +173,39 @@ func (c *CompatibilityLocal) NvmValueCheckUpdateHeight() uint64 {
 // NbreAvailableHeight ..
 func (c *CompatibilityLocal) NbreAvailableHeight() uint64 {
 	return c.nbreAvailableHeight
+}
+
+// Nrc20SecurityCheckHeight ..
+func (c *CompatibilityLocal) Nrc20SecurityCheckHeight() uint64 {
+	return c.nrc20SecurityCheckHeight
+}
+
+// NbreSplitHeight ..
+func (c *CompatibilityLocal) NbreSplitHeight() uint64 {
+	return c.nbreSplitHeight
+}
+
+// NodeUpdateHeight ..
+func (c *CompatibilityLocal) NodeUpdateHeight() uint64 {
+	return c.nodeUpdateHeight
+}
+
+// NodeStartSerial ..
+func (c *CompatibilityLocal) NodeStartSerial() uint64 {
+	return c.nodeStartSerial
+}
+
+// NodeAccessContract ..
+func (c *CompatibilityLocal) NodeAccessContract() *Address {
+	return c.nodeAccessContract
+}
+
+// NodePodContract ..
+func (c *CompatibilityLocal) NodePodContract() *Address {
+	return c.nodePodContract
+}
+
+// NodeGovernanceContract ..
+func (c *CompatibilityLocal) NodeGovernanceContract() *Address {
+	return c.nodeGovernanceContract
 }

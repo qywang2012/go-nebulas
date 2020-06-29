@@ -19,16 +19,14 @@ Mainnet is released, please check [here](https://github.com/nebulasio/wiki/blob/
 
 | Components | Version | Description |
 |----------|-------------|-------------|
-|[Golang](https://golang.org) | >= 1.11| The Go Programming Language |
-[Dep](https://github.com/golang/dep) | >= 0.3.1 | Dep is a dependency management tool for Go. |
+|[Golang](https://golang.org) | >= 1.12| The Go Programming Language |
 
 ### Build
 
 #### Checkout repo.
 
 ```bash
-cd $GOPATH/src
-go get -u -v github.com/nebulasio/go-nebulas
+git clone github.com/nebulasio/go-nebulas
 ```
 
 The project is under active development. New users may want to checkout and use the stable mainnet release in __master__.
@@ -50,50 +48,86 @@ Nebulas execution need NVM and NBRE two dependent libraries. We provide stable v
 
 ```bash
 cd github.com/nebulasio/go-nebulas
-source install-native-libs.sh
+
+OS X:
+./setup.sh
+
+Linux:
+source setup.sh
 ```
 ##### *Note*:
 
 The dependency libraries are not installed in the system directory, and there are different path-loading methods used in Darwin and Linux systems.
 
 * *OS X*:
-    * In the user's root directory to create ` lib ` folder, system to load the library path can read this path, ensure that the root directory of the current folder does not exist. All of these operations in ` install-native-libs.sh ` already processing.(`DYLD_LIBRARY_PATH` is not possible unless System Integrity Protection (SIP) is disabled)
+    * In the user's root directory to create ` lib ` folder, system to load the library path can read this path, ensure that the root directory of the current folder does not exist. All of these operations in ` setup.sh ` already processing.(`DYLD_LIBRARY_PATH` is not possible unless System Integrity Protection (SIP) is disabled)
+
+    ```
+    ./setup.sh
+    ```
 
 * *Linux - Ubuntu*
-    * `install-native-libs.sh` export `LD_LIBRARY_PATH` for native libs.
-    * Because the CPU instruction set may vary from machine to machine, the pre-compiled nbre may not be available. **If the library you installed with the script is not available (it does not start after compilation), compile the nbre yourself:**
-    	* delete invalid libraries
-    	* prepare nbre build environment(It may take a long time, compile cmake, llvm, rocksdb and etc.)
-    	* build nbre
-    	* re-source the native libs
+    * `setup.sh` export `LD_LIBRARY_PATH` for native libs.
     
-    	```bash
-    	cd nbre
-    	rm -rf lib
-    	rm -rf lib_llvm
-    	./prepare.sh
-    	./build.sh
-    	cd ..
-    	source install-native-libs.sh
-    	```  	
-
-#### Install dependencies packages.
-
-   * all golang dependencies will be stored in ./vendor.
-   * run `make dep` to install dependencies.
-   * If you failed to run this, please download our [vendor.tar.gz](http://develop-center.oss-cn-zhangjiakou.aliyuncs.com/setup/vendor/vendor.tar.gz) directly.
-
 
 #### Build the neb binary.
-    * run `make build`
+   * run command
+   
+   ```
+   make build
+   ```
+   
+## Building from Docker
+
+You can specify the config file by modifying the docker-compose environment configuration.
+
+- default docker compose config(version3):
+
+```
+version: '3'
+
+services:
+  
+  node:
+    image: nebulasio/go-nebulas
+    build:
+      context: ./docker
+    ports:
+      - '8680:8680'
+      - '8684:8684'
+      - '8685:8685'
+      - '8888:8888'
+      - '8086:8086'
+    volumes:
+      - .:/go/src/github.com/nebulasio/go-nebulas
+    environment:
+      - REGION=China
+      - config=mainnet/conf/config.conf
+    command: bash docker/scripts/neb.bash
+
+```
+
+ - install [docker](https://docs.docker.com/install/linux/docker-ce/ubuntu/) and [docker-compose](https://docs.docker.com/compose/install/)
+ - run docker command
+
+ ```
+ sudo docker-compose build
+ sudo docker-compose up -d
+ ```
 
 ## Run
 
-### Run seed node
-Starting a Nebulas seed node is simple. After the build step above, run a command:
+### Run node
+Starting a Nebulas node is simple. After the build step above, run a command:
 
 ```bash
 ./neb [-c /path/to/config.conf]
+```
+
+Quick start please use script and added check(***Recommend***):
+
+```bash
+./start.sh mainnet|testnet|[-c /path/to/config.conf]
 ```
 
 > tips: more details about configuration, please refer to [`template.conf`](https://github.com/nebulasio/wiki/blob/master/resources/conf/template.conf)

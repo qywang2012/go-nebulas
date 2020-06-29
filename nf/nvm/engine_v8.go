@@ -95,15 +95,14 @@ const (
 
 //engine_v8 private data
 var (
-	v8engineOnce         = sync.Once{}
-	storages             = make(map[uint64]*V8Engine, 1024)
-	storagesIdx          = uint64(0)
-	storagesLock         = sync.RWMutex{}
-	engines              = make(map[*C.V8Engine]*V8Engine, 1024)
-	enginesLock          = sync.RWMutex{}
-	sourceModuleCache, _ = lru.New(40960)
-	inject               = 0
-	hit                  = 0
+	v8engineOnce              = sync.Once{}
+	storages                  = make(map[uint64]*V8Engine, 1024)
+	storagesIdx               = uint64(0)
+	storagesLock              = sync.RWMutex{}
+	engines                   = make(map[*C.V8Engine]*V8Engine, 1024)
+	enginesLock               = sync.RWMutex{}
+	sourceModuleCache, _      = lru.New(40960)
+	instructionCounterVersion = "1.0.0"
 )
 
 // V8Engine v8 engine.
@@ -187,9 +186,9 @@ func NewV8Engine(ctx *Context) *V8Engine {
 	})
 
 	engine := &V8Engine{
-		ctx:      ctx,
-		modules:  NewModules(),
-		v8engine: C.CreateEngine(),
+		ctx:                                     ctx,
+		modules:                                 NewModules(),
+		v8engine:                                C.CreateEngine(),
 		strictDisallowUsageOfInstructionCounter: 1, // enable by default.
 		enableLimits:                            true,
 		limitsOfExecutionInstructions:           0,
@@ -283,10 +282,10 @@ func (e *V8Engine) SetExecutionLimits(limitsOfExecutionInstructions, limitsOfTot
 	e.v8engine.limits_of_executed_instructions = C.size_t(limitsOfExecutionInstructions)
 	e.v8engine.limits_of_total_memory_size = C.size_t(limitsOfTotalMemorySize)
 
-	logging.VLog().WithFields(logrus.Fields{
-		"limits_of_executed_instructions": limitsOfExecutionInstructions,
-		"limits_of_total_memory_size":     limitsOfTotalMemorySize,
-	}).Debug("set execution limits.")
+	//logging.VLog().WithFields(logrus.Fields{
+	//	"limits_of_executed_instructions": limitsOfExecutionInstructions,
+	//	"limits_of_total_memory_size":     limitsOfTotalMemorySize,
+	//}).Debug("set execution limits.")
 
 	e.limitsOfExecutionInstructions = limitsOfExecutionInstructions
 	e.limitsOfTotalMemorySize = limitsOfTotalMemorySize
@@ -575,6 +574,16 @@ func (e *V8Engine) AddModule(id, source string, sourceLineOffset int) error {
 
 func (e *V8Engine) prepareRunnableContractScript(source, function, args string) (string, int, error) {
 	sourceLineOffset := 0
+
+	counterVersion := core.GetNearestInstructionCounterVersionAtHeight(e.ctx.block.Height())
+	if counterVersion != instructionCounterVersion {
+		instructionCounterVersion = counterVersion
+		ClearSourceModuleCache()
+		logging.VLog().WithFields(logrus.Fields{
+			"height":  e.ctx.block.Height(),
+			"version": instructionCounterVersion,
+		}).Info("Clear source module cache.")
+	}
 
 	// add module.
 	const ModuleID string = "contract.js"

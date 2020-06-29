@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nebulasio/go-nebulas/consensus/pod"
+
 	"github.com/nebulasio/go-nebulas/nr"
 
 	"net/http"
@@ -22,13 +24,11 @@ import (
 	"net"
 
 	"github.com/nebulasio/go-nebulas/account"
-	"github.com/nebulasio/go-nebulas/consensus/dpos"
 	"github.com/nebulasio/go-nebulas/core"
-	"github.com/nebulasio/go-nebulas/core/pb"
+	corepb "github.com/nebulasio/go-nebulas/core/pb"
 	"github.com/nebulasio/go-nebulas/metrics"
-	"github.com/nebulasio/go-nebulas/neblet/pb"
+	nebletpb "github.com/nebulasio/go-nebulas/neblet/pb"
 	nebnet "github.com/nebulasio/go-nebulas/net"
-	"github.com/nebulasio/go-nebulas/nf/nbre"
 	"github.com/nebulasio/go-nebulas/nf/nvm"
 	"github.com/nebulasio/go-nebulas/nip/dip"
 	"github.com/nebulasio/go-nebulas/rpc"
@@ -75,8 +75,6 @@ type Neblet struct {
 	eventEmitter *core.EventEmitter
 
 	nvm core.NVM
-
-	nbre core.Nbre
 
 	nr core.NR
 
@@ -165,7 +163,7 @@ func (n *Neblet) Setup() {
 
 	// core
 	n.eventEmitter = core.NewEventEmitter(40960)
-	n.consensus = dpos.NewDpos()
+	n.consensus = pod.NewPoD()
 	n.blockChain, err = core.NewBlockChain(n)
 	if err != nil {
 		logging.CLog().WithFields(logrus.Fields{
@@ -191,9 +189,6 @@ func (n *Neblet) Setup() {
 
 	// rpc
 	n.rpcServer = rpc.NewServer(n)
-
-	// nbre
-	n.nbre = nbre.NewNbre(n)
 
 	logging.CLog().Info("Setuped Neblet.")
 }
@@ -294,17 +289,6 @@ func (n *Neblet) Start() {
 		}
 	}
 
-	if err := n.nbre.Start(); err != nil {
-		logging.CLog().WithFields(logrus.Fields{
-			"err": err,
-		}).Fatal("Failed to start nbre.")
-	}
-
-	if chainConf.StartMine {
-		// start dip
-		n.dip.Start()
-	}
-
 	metricsNebstartGauge.Update(1)
 
 	logging.CLog().Info("Started Neblet.")
@@ -359,11 +343,6 @@ func (n *Neblet) Stop() {
 	if n.dip != nil {
 		n.dip.Stop()
 		n.dip = nil
-	}
-
-	if n.nbre != nil {
-		n.nbre.Stop()
-		n.nbre = nil
 	}
 
 	n.accountManager = nil
@@ -434,11 +413,6 @@ func (n *Neblet) IsActiveSyncing() bool {
 // Nvm return nvm engine
 func (n *Neblet) Nvm() core.NVM {
 	return n.nvm
-}
-
-// Nbre return the nbre
-func (n *Neblet) Nbre() core.Nbre {
-	return n.nbre
 }
 
 // NR return the nr

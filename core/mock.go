@@ -21,12 +21,12 @@ package core
 import (
 	"time"
 
-	"github.com/nebulasio/go-nebulas/consensus/pb"
-	"github.com/nebulasio/go-nebulas/core/pb"
+	consensuspb "github.com/nebulasio/go-nebulas/consensus/pb"
+	corepb "github.com/nebulasio/go-nebulas/core/pb"
 	"github.com/nebulasio/go-nebulas/core/state"
 	"github.com/nebulasio/go-nebulas/crypto/keystore"
 	"github.com/nebulasio/go-nebulas/crypto/keystore/secp256k1"
-	"github.com/nebulasio/go-nebulas/neblet/pb"
+	nebletpb "github.com/nebulasio/go-nebulas/neblet/pb"
 	"github.com/nebulasio/go-nebulas/net"
 	"github.com/nebulasio/go-nebulas/storage"
 	"github.com/nebulasio/go-nebulas/util"
@@ -155,6 +155,11 @@ func (c *mockConsensus) Setup(neb Neblet) error {
 func (c *mockConsensus) Start() {}
 func (c *mockConsensus) Stop()  {}
 
+// Serial return dynasty serial number
+func (pod *mockConsensus) Serial(timestamp int64) int64 {
+	return 0
+}
+
 func (c *mockConsensus) VerifyBlock(block *Block) error {
 	return nil
 }
@@ -192,7 +197,7 @@ func (c *mockConsensus) ForkChoice() error {
 	return nil
 }
 
-func (c *mockConsensus) UpdateLIB() {}
+func (c *mockConsensus) UpdateLIB(rversibleBlocks []byteutils.Hash) {}
 
 func (c *mockConsensus) SuspendMining() {}
 func (c *mockConsensus) ResumeMining()  {}

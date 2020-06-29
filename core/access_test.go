@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nebulasio/go-nebulas/core/pb"
+	corepb "github.com/nebulasio/go-nebulas/core/pb"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -45,7 +45,7 @@ func TestNewAccess(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			access, err := NewAccess(tt.path)
+			access, err := NewAccess(testNeb(t))
 			assert.Equal(t, tt.wantErr, err != nil)
 			if err == nil {
 				assert.NotNil(t, access)
@@ -178,6 +178,146 @@ func TestAccess_CheckTransaction(t *testing.T) {
 			} else {
 				assert.True(t, strings.HasPrefix(err.Error(), tt.err.Error()))
 			}
+		})
+	}
+
+}
+
+func TestAccess_CheckNRC20Transaction(t *testing.T) {
+	nrc20Contract := "n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo"
+	access := &Access{
+		access: &corepb.Access{
+			Nrc20List: &corepb.Nrc20List{
+				Contracts: []string{nrc20Contract},
+			},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		to       string
+		function string
+		args     string
+		err      error
+	}{
+		{
+			name: "normal not nrc20",
+			to:   mockAddress().String(),
+			err:  nil,
+		},
+		{
+			name:     "nrc20 func not check",
+			to:       nrc20Contract,
+			function: "balanceOf",
+			err:      nil,
+		},
+		{
+			name:     "transfer args err",
+			to:       nrc20Contract,
+			function: NRC20FuncTransfer,
+			args:     "[\"n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo\",0]",
+			err:      ErrNrc20ArgsCheckFailed,
+		},
+		{
+			name:     "transfer addr err",
+			to:       nrc20Contract,
+			function: NRC20FuncTransfer,
+			args:     "[\"1\",\"0\"]",
+			err:      ErrNrc20AddressCheckFailed,
+		},
+		{
+			name:     "transfer value err",
+			to:       nrc20Contract,
+			function: NRC20FuncTransfer,
+			args:     "[\"n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo\",\"0.1\"]",
+			err:      ErrNrc20ValueCheckFailed,
+		},
+		{
+			name:     "transfer value err",
+			to:       nrc20Contract,
+			function: NRC20FuncTransfer,
+			args:     "[\"n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo\",\"-1\"]",
+			err:      ErrNrc20ValueCheckFailed,
+		},
+		{
+			name:     "transfer value err",
+			to:       nrc20Contract,
+			function: NRC20FuncTransfer,
+			args:     "[\"n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo\",\"1e2\"]",
+			err:      ErrNrc20ValueCheckFailed,
+		},
+		{
+			name:     "transfer success",
+			to:       nrc20Contract,
+			function: NRC20FuncTransfer,
+			args:     "[\"n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo\",\"1\"]",
+			err:      nil,
+		},
+		{
+			name:     "transferFrom addr err",
+			to:       nrc20Contract,
+			function: NRC20FuncTransferFrom,
+			args:     "[\"1\",\"0\",\"0\"]",
+			err:      ErrNrc20AddressCheckFailed,
+		},
+		{
+			name:     "transferFrom value err",
+			to:       nrc20Contract,
+			function: NRC20FuncTransferFrom,
+			args:     "[\"n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo\",\"0\",\"0.1\"]",
+			err:      ErrNrc20ValueCheckFailed,
+		},
+		{
+			name:     "transferFrom value err",
+			to:       nrc20Contract,
+			function: NRC20FuncTransferFrom,
+			args:     "[\"n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo\",\"0\",\"-1\"]",
+			err:      ErrNrc20ValueCheckFailed,
+		},
+		{
+			name:     "transferFrom value err",
+			to:       nrc20Contract,
+			function: NRC20FuncTransferFrom,
+			args:     "[\"n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo\",\"0\",\"1e2\"]",
+			err:      ErrNrc20ValueCheckFailed,
+		},
+		{
+			name:     "transferFrom success",
+			to:       nrc20Contract,
+			function: NRC20FuncTransferFrom,
+			args:     "[\"n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo\",\"0\",\"0\"]",
+			err:      nil,
+		},
+		{
+			name:     "approve value err",
+			to:       nrc20Contract,
+			function: NRC20FuncApprove,
+			args:     "[\"n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo\",\"0\",\"1e2\"]",
+			err:      ErrNrc20ValueCheckFailed,
+		},
+		{
+			name:     "approve",
+			to:       nrc20Contract,
+			function: NRC20FuncApprove,
+			args:     "[\"n1qGqcvPWE45VGYZYNPd9VgA1KAAV1sRqfo\",\"0\",\"0\"]",
+			err:      nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payloadType := TxPayloadBinaryType
+			payloadBytes := []byte{}
+			if tt.function != "" {
+				payloadType = TxPayloadCallType
+				payload, _ := NewCallPayload(tt.function, tt.args)
+				payloadBytes, _ = payload.ToBytes()
+			}
+			tx := mockTransaction(100, 1, payloadType, payloadBytes)
+			tx.to, _ = AddressParse(tt.to)
+
+			err := access.CheckTransaction(tx)
+			assert.Equal(t, tt.err, err, tt.name)
 		})
 	}
 

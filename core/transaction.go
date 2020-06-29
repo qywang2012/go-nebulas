@@ -30,7 +30,7 @@ import (
 	"encoding/json"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/nebulasio/go-nebulas/core/pb"
+	corepb "github.com/nebulasio/go-nebulas/core/pb"
 	"github.com/nebulasio/go-nebulas/crypto"
 	"github.com/nebulasio/go-nebulas/crypto/keystore"
 	"github.com/nebulasio/go-nebulas/util"
@@ -51,8 +51,11 @@ var (
 	// TransactionMaxGas max gas:50 * 10 ** 9
 	TransactionMaxGas, _ = util.NewUint128FromString("50000000000")
 
-	// TransactionGasPrice default gasPrice : 10**6
-	TransactionGasPrice, _ = util.NewUint128FromInt(1000000)
+	// TransactionGasPrice default gasPrice : 2*10**10
+	TransactionGasPrice, _ = util.NewUint128FromString("20000000000")
+
+	// GenesisGasPrice default gasPrice : 1*10**6
+	GenesisGasPrice, _ = util.NewUint128FromInt(1000000)
 
 	// MinGasCountPerTransaction default gas for normal transaction
 	MinGasCountPerTransaction, _ = util.NewUint128FromInt(20000)
@@ -110,6 +113,12 @@ type Transaction struct {
 // SetTimestamp update the timestamp.
 func (tx *Transaction) SetTimestamp(timestamp int64) {
 	tx.timestamp = timestamp
+}
+
+// SetSignature update tx sign
+func (tx *Transaction) SetSignature(alg keystore.Algorithm, sign byteutils.Hash) {
+	tx.alg = alg
+	tx.sign = sign
 }
 
 // From return from address
@@ -423,6 +432,8 @@ func (tx *Transaction) LoadPayload() (TxPayload, error) {
 		payload, err = LoadProtocolPayload(tx.data.Payload)
 	case TxPayloadDipType:
 		payload, err = LoadDipPayload(tx.data.Payload)
+	case TxPayloadPodType:
+		payload, err = LoadPodPayload(tx.data.Payload)
 	default:
 		err = ErrInvalidTxPayloadType
 	}
@@ -506,9 +517,12 @@ func VerifyExecution(tx *Transaction, block *Block, ws WorldState) (bool, error)
 		// Gas overflow, won't giveback the tx
 		return false, ErrGasFeeOverflow
 	}
-	if fromAcc.Balance().Cmp(limitedFee) < 0 {
-		// Balance is smaller than limitedFee, won't giveback the tx
-		return false, ErrInsufficientBalance
+
+	if tx.Type() != TxPayloadPodType {
+		if fromAcc.Balance().Cmp(limitedFee) < 0 {
+			// Balance is smaller than limitedFee, won't giveback the tx
+			return false, ErrInsufficientBalance
+		}
 	}
 
 	// step2. check gasLimit >= txBaseGas.
@@ -560,8 +574,10 @@ func VerifyExecution(tx *Transaction, block *Block, ws WorldState) (bool, error)
 	if balanceErr != nil {
 		return submitTx(tx, block, ws, gasUsed, ErrGasFeeOverflow, "Failed to add tx.value", "")
 	}
-	if fromAcc.Balance().Cmp(minBalanceRequired) < 0 {
-		return submitTx(tx, block, ws, gasUsed, ErrInsufficientBalance, "Failed to check balance >= gasLimit * gasPrice + value", "")
+	if tx.Type() != TxPayloadPodType {
+		if fromAcc.Balance().Cmp(minBalanceRequired) < 0 {
+			return submitTx(tx, block, ws, gasUsed, ErrInsufficientBalance, "Failed to check balance >= gasLimit * gasPrice + value", "")
+		}
 	}
 	var transferSubErr, transferAddErr error
 	transferSubErr = fromAcc.SubBalance(tx.value)
@@ -616,7 +632,7 @@ func VerifyExecution(tx *Transaction, block *Block, ws WorldState) (bool, error)
 // simulateExecution simulate execution and return gasUsed, executionResult and executionErr, sysErr if occurred.
 func (tx *Transaction) simulateExecution(block *Block) (*SimulateResult, error) {
 	// hash is necessary in nvm
-	hash, err := tx.calHash()
+	hash, err := tx.HashTransaction()
 	if err != nil {
 		return nil, err
 	}
@@ -688,8 +704,10 @@ func (tx *Transaction) simulateExecution(block *Block) (*SimulateResult, error) 
 		}
 	}
 
-	// check balance.
-	err = checkBalanceForGasUsedAndValue(ws, fromAcc, tx.value, gasUsed, tx.gasPrice)
+	if tx.Type() != TxPayloadPodType {
+		// check balance.
+		err = checkBalanceForGasUsedAndValue(ws, fromAcc, tx.value, gasUsed, tx.gasPrice)
+	}
 	return &SimulateResult{gasUsed, result, err}, nil
 }
 
@@ -714,6 +732,11 @@ func (tx *Transaction) recordGas(gasCnt *util.Uint128, ws WorldState) error {
 	gasCost, err := tx.GasPrice().Mul(gasCnt)
 	if err != nil {
 		return err
+	}
+
+	// There is no gas fee for the consensus transaction
+	if tx.Type() == TxPayloadPodType {
+		gasCost = util.NewUint128()
 	}
 
 	return ws.RecordGas(tx.from.String(), gasCost)
@@ -776,7 +799,7 @@ func (tx *Transaction) Sign(signature keystore.Signature) error {
 	if signature == nil {
 		return ErrNilArgument
 	}
-	hash, err := tx.calHash()
+	hash, err := tx.HashTransaction()
 	if err != nil {
 		return err
 	}
@@ -798,7 +821,7 @@ func (tx *Transaction) VerifyIntegrity(chainID uint32) error {
 	}
 
 	// check Hash.
-	wantedHash, err := tx.calHash()
+	wantedHash, err := tx.HashTransaction()
 	if err != nil {
 		return err
 	}
@@ -940,7 +963,7 @@ func GetTransaction(hash byteutils.Hash, ws WorldState) (*Transaction, error) {
 }
 
 // HashTransaction hash the transaction.
-func (tx *Transaction) calHash() (byteutils.Hash, error) {
+func (tx *Transaction) HashTransaction() (byteutils.Hash, error) {
 	hasher := sha3.New256()
 
 	value, err := tx.value.ToFixedSizeByteSlice()

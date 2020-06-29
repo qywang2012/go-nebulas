@@ -19,15 +19,17 @@
 package dip
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/nebulasio/go-nebulas/storage"
 
 	"github.com/nebulasio/go-nebulas/account"
 	"github.com/nebulasio/go-nebulas/core"
 	"github.com/nebulasio/go-nebulas/crypto/keystore"
 	"github.com/nebulasio/go-nebulas/crypto/keystore/secp256k1"
-	"github.com/nebulasio/go-nebulas/neblet/pb"
-	"github.com/nebulasio/go-nebulas/nf/nbre"
+	nebletpb "github.com/nebulasio/go-nebulas/neblet/pb"
 	"github.com/nebulasio/go-nebulas/util"
 	"github.com/stretchr/testify/assert"
 )
@@ -50,7 +52,6 @@ type mockNeb struct {
 	config *nebletpb.Config
 	chain  *core.BlockChain
 	am     core.AccountManager
-	nbre   core.Nbre
 }
 
 func (n *mockNeb) Config() *nebletpb.Config {
@@ -65,45 +66,12 @@ func (n *mockNeb) BlockChain() *core.BlockChain {
 	return n.chain
 }
 
-func (n *mockNeb) Nbre() core.Nbre {
-	return n.nbre
-}
-
-type mockNbre struct {
-}
-
-func (m *mockNbre) Start() error {
-	return nil
-}
-
-func (m *mockNbre) Execute(command string, args ...interface{}) (interface{}, error) {
-	if command == nbre.CommandDIPList {
-		data := &DIPData{
-			StartHeight: 1,
-			EndHeight:   100,
-			Dips:        make([]*DIPItem, 1),
-		}
-		item := &DIPItem{
-			Address: dipAddr.String(),
-			Reward:  "1",
-		}
-		data.Dips[0] = item
-		bytes, _ := data.ToBytes()
-		return string(bytes), nil
-	} else {
-		return nil, nil
-	}
-}
-func (m *mockNbre) Stop() {
-}
-
 func testNeb(t *testing.T) *mockNeb {
 
 	neb := &mockNeb{
 		config: &nebletpb.Config{Chain: &nebletpb.ChainConfig{ChainId: 1},
 			Nbre: &nebletpb.NbreConfig{},
 		},
-		nbre: &mockNbre{},
 	}
 
 	account, _ := account.NewManager(neb)
@@ -252,4 +220,42 @@ func TestDip_CheckReward(t *testing.T) {
 			assert.Equal(t, tt.err, err)
 		})
 	}
+}
+
+func readNbreDB(key string) ([]byte, error) {
+	rs, err := storage.NewRocksStorage("../../mainnet/nbre/nbre.db")
+	if err != nil {
+		return nil, err
+	}
+	data, err := rs.Get([]byte(key))
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func TestDip_ReadDIP(t *testing.T) {
+	dbdata, err := readNbreDB("dip_rewards")
+	assert.Nil(t, err)
+	data := DipReward{}
+	err = json.Unmarshal(dbdata, &data)
+	assert.Nil(t, err)
+	items := make([]*DIPData, len(data.DipRewards))
+	for i, str := range data.DipRewards {
+		item := DIPData{}
+		err := json.Unmarshal([]byte(str), &item)
+		assert.Nil(t, err)
+		items[i] = &item
+	}
+	assert.Nil(t, err)
+	//recordData, err := json.Marshal(items)
+	//assert.Nil(t, err)
+	//util.FileWrite("./dipdata/dip_data.json", recordData, true)
+}
+
+func TestNR_LoadCache(t *testing.T) {
+	neb := testNeb(t)
+	dip, err := NewDIP(neb)
+	assert.Nil(t, err)
+	dip.loadCache()
 }

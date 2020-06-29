@@ -33,7 +33,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/nebulasio/go-nebulas/core"
-	"github.com/nebulasio/go-nebulas/core/pb"
+	corepb "github.com/nebulasio/go-nebulas/core/pb"
 	"github.com/nebulasio/go-nebulas/core/state"
 	"github.com/nebulasio/go-nebulas/util"
 	"github.com/nebulasio/go-nebulas/util/byteutils"
@@ -639,7 +639,7 @@ func createInnerContext(engine *V8Engine, fromAddr *core.Address, toAddr *core.A
 }
 
 //recordInnerContractEvent private func only in InnerContractFunc
-func recordInnerContractEvent(err error, from string, to string, value string, wsState WorldState, txHash byteutils.Hash) {
+func recordInnerContractEvent(e *V8Engine, err error, from string, to string, value string, innerFunc string, innerArgs string, wsState WorldState, txHash byteutils.Hash) {
 	errStr := ""
 	if err != nil {
 		errStr = err.Error()
@@ -649,6 +649,11 @@ func recordInnerContractEvent(err error, from string, to string, value string, w
 		To:    to,
 		Value: value,
 		Err:   errStr,
+	}
+
+	if core.NbreSplitAtHeight(e.ctx.block.Height()) {
+		event.Function = innerFunc
+		event.Args = innerArgs
 	}
 
 	eData, errMarshal := json.Marshal(event)
@@ -826,16 +831,18 @@ func InnerContractFunc(handler unsafe.Pointer, address *C.char, funcName *C.char
 		return nil
 	}
 
-	logging.VLog().Debugf("begin create New V8,intance:%v, mem:%v", remainInstruction, remainMem)
+	//logging.VLog().Debugf("begin create New V8,intance:%v, mem:%v", remainInstruction, remainMem)
 	engineNew := NewV8Engine(newCtx)
 	defer engineNew.Dispose()
 	engineNew.SetExecutionLimits(remainInstruction, remainMem)
 
-	val, err := engineNew.Call(string(deploy.Source), deploy.SourceType, C.GoString(funcName), C.GoString(args))
+	innerFunc := C.GoString(funcName)
+	innerArgs := C.GoString(args)
+	val, err := engineNew.Call(string(deploy.Source), deploy.SourceType, innerFunc, innerArgs)
 	gasCout := engineNew.ExecutionInstructions()
 	gasSum += gasCout
 	*gasCnt = C.size_t(gasSum)
-	recordInnerContractEvent(err, fromAddr.String(), addr.String(), toValue.String(), ws, parentTx.Hash())
+	recordInnerContractEvent(engine, err, fromAddr.String(), addr.String(), toValue.String(), innerFunc, innerArgs, ws, parentTx.Hash())
 	if err != nil {
 		if err == core.ErrInnerExecutionFailed {
 			logging.VLog().Errorf("check inner err, engine index:%v", index)
@@ -846,7 +853,7 @@ func InnerContractFunc(handler unsafe.Pointer, address *C.char, funcName *C.char
 		return nil
 	}
 
-	logging.VLog().Infof("end cal val:%v,gascount:%v,gasSum:%v, engine index:%v", val, gasCout, gasSum, index)
+	//logging.VLog().Debug("end cal val:%v,gascount:%v,gasSum:%v, engine index:%v", val, gasCout, gasSum, index)
 	return C.CString(string(val))
 }
 

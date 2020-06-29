@@ -26,8 +26,8 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/nebulasio/go-nebulas/common/dag"
-	"github.com/nebulasio/go-nebulas/consensus/pb"
-	"github.com/nebulasio/go-nebulas/core/pb"
+	consensuspb "github.com/nebulasio/go-nebulas/consensus/pb"
+	corepb "github.com/nebulasio/go-nebulas/core/pb"
 	"github.com/nebulasio/go-nebulas/core/state"
 	"github.com/nebulasio/go-nebulas/util"
 	"github.com/nebulasio/go-nebulas/util/logging"
@@ -158,14 +158,14 @@ func NewGenesisBlock(conf *corepb.Genesis, chain *BlockChain) (*Block, error) {
 		util.Uint128Zero(), 1,
 		TxPayloadBinaryType,
 		[]byte(declaration),
-		TransactionGasPrice,
+		GenesisGasPrice,
 		MinGasCountPerTransaction,
 	)
 	if err != nil {
 		return nil, err
 	}
 	declarationTx.timestamp = 0
-	hash, err := declarationTx.calHash()
+	hash, err := declarationTx.HashTransaction()
 	if err != nil {
 		return nil, err
 	}

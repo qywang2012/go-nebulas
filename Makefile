@@ -19,7 +19,7 @@
 
 SHELL := /bin/bash 
 
-VERSION?=2.0
+VERSION?=3.0.0
 
 COMMIT=$(shell git rev-parse HEAD)
 BRANCH=$(shell git rev-parse --abbrev-ref HEAD)
@@ -40,27 +40,48 @@ ifeq ($(OS),Darwin)
 	LDCONFIG=
 	NEBBINARY=$(BINARY)
 	BUUILDLOG=
+	DBCHECK=brew list | grep -c rocksdb
 else
 	DYLIB=.so
 	INSTALL=sudo install
 	LDCONFIG=sudo /sbin/ldconfig
 	NEBBINARY=$(BINARY)-$(COMMIT)
 	BUUILDLOG=-rm -f $(BINARY); ln -s $(BINARY)-$(COMMIT) $(BINARY)
+	DBCHECK=ldconfig -p | grep -c rocksdb
 endif
 
 NATIVELIB := native-lib
 ifeq ($(NATIVELIB),$(wildcard $(NATIVELIB)))
-    CGO_CFLAGS=CGO_CFLAGS="-I$(CURRENT_DIR)/nbre/lib/include -g -O2"
-	CGO_LDFLAGS=CGO_LDFLAGS="-L$(CURRENT_DIR)/native-lib -lrocksdb -lstdc++ -lc++ -lgflags -lm -lz -lbz2 -lsnappy -llz4 -lzstd -g -O2"
+    CGO_CFLAGS=
+	CGO_LDFLAGS=CGO_LDFLAGS="-L$(CURRENT_DIR)/native-lib -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy -llz4 -lzstd"
 else
     CGO_CFLAGS=
 	CGO_LDFLAGS=
 endif
 
-ifeq ($(shell command -v dep 2> /dev/null || echo "uninstalled"),uninstalled)
-	DEPINSTALL=mkdir -p $(GOPATH)/bin && curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+# ifeq ($(shell command -v dep 2> /dev/null || echo "uninstalled"),uninstalled)
+# 	DEPINSTALL=mkdir -p $(GOPATH)/bin && curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+# else
+# 	DEPINSTALL=
+# endif
+
+ifeq ($(shell command -v go 2> /dev/null || echo "uninstalled"),uninstalled)
+	GOCHECK=$(error  "go not installed. run `source setup.sh` first!")
 else
-	DEPINSTALL=
+	# GOCHECK=$(info  "go installed.")
+	GOCHECK=
+endif
+
+ifneq ($(DBCHECK),0)
+	DBCHECK=
+else
+	DBCHECK=$(error  "rocksdb not installed. run `source setup.sh` first!")
+endif
+
+ifneq ($(shell ls $(CURRENT_DIR)/nf/nvm/native-lib |grep -c libnebulas),0)
+	LIBCHECK=
+else
+	LIBCHECK=$(error  "nvm not installed. run `source setup.sh` first!")
 endif
 
 # $(warning  $(CGO_LDFLAGS))
@@ -73,21 +94,34 @@ LDFLAGS = -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.
 
 all: clean vet fmt lint build test
 
-dep:
-	$(DEPINSTALL) dep ensure -v
+#dep:
+#	$(DEPINSTALL) dep ensure -v
 
-build:
-	cd cmd/neb; $(CGO_CFLAGS) $(CGO_LDFLAGS) go build $(LDFLAGS) -o ../../$(NEBBINARY)
+check: check-go check-db check-lib
+
+check-go:
+	$(GOCHECK)
+    
+check-db:
+	$(DBCHECK)
+
+check-lib:
+	$(LIBCHECK)
+
+build: check build-neb
+
+build-neb:
+	cd cmd/neb; GOPROXY=https://goproxy.io $(CGO_CFLAGS) $(CGO_LDFLAGS) go build $(LDFLAGS) -o ../../$(NEBBINARY)
 	$(BUUILDLOG)
 
-build-linux:
-	cd cmd/neb; GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o ../../$(BINARY)-linux
+#build-linux:
+#	cd cmd/neb; GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o ../../$(BINARY)-linux
 
 LIST := ./account/... ./cmd/... ./common/... ./consensus ./core/... ./crypto/... ./metrics/... ./neblet/... ./net/... ./nf/... ./rpc/... ./storage/... ./sync/... ./util/... ./nip/... ./nr/...
 # LIST := $(ls -d */|grep -Ev "vendor|logs|nebtestkit|.db")/...
 
 test:
-	env GOCACHE=off $(CGO_CFLAGS) $(CGO_LDFLAGS) go test $(LIST) 2>&1 | tee $(TEST_REPORT); go2xunit -fail -input $(TEST_REPORT) -output $(TEST_XUNIT_REPORT)
+	$(CGO_CFLAGS) $(CGO_LDFLAGS) go test $(LIST) 2>&1 | tee $(TEST_REPORT); go2xunit -fail -input $(TEST_REPORT) -output $(TEST_XUNIT_REPORT)
 
 vet:
 	go vet $$(go list $(LIST)) 2>&1 | tee $(VET_REPORT)

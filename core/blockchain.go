@@ -21,6 +21,7 @@ package core
 import (
 	"crypto/rand"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,7 +29,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	lru "github.com/hashicorp/golang-lru"
-	"github.com/nebulasio/go-nebulas/core/pb"
+	corepb "github.com/nebulasio/go-nebulas/core/pb"
 	"github.com/nebulasio/go-nebulas/storage"
 	"github.com/nebulasio/go-nebulas/util"
 	"github.com/nebulasio/go-nebulas/util/byteutils"
@@ -60,6 +61,7 @@ type BlockChain struct {
 
 	cachedBlocks       *lru.Cache
 	detachedTailBlocks *lru.Cache
+	reversibleBlocks   *lru.Cache
 
 	// latest irreversible block
 	lib *Block
@@ -77,9 +79,6 @@ type BlockChain struct {
 	quitCh chan int
 
 	superNode bool
-
-	// deprecated
-	unsupportedKeyword string
 }
 
 const (
@@ -141,25 +140,24 @@ func NewBlockChain(neb Neblet) (*BlockChain, error) {
 		return nil, err
 	}
 	txPool.RegisterInNetwork(neb.NetService())
-	access, err := NewAccess(neb.Config().Chain.Access)
+	access, err := NewAccess(neb)
 	if err != nil {
 		return nil, err
 	}
 	txPool.setAccess(access)
 
 	var bc = &BlockChain{
-		chainID:            neb.Config().Chain.ChainId,
-		genesis:            neb.Genesis(),
-		bkPool:             blockPool,
-		txPool:             txPool,
-		storage:            neb.Storage(),
-		eventEmitter:       neb.EventEmitter(),
-		nvm:                neb.Nvm(),
-		nr:                 neb.Nr(),
-		dip:                neb.Dip(),
-		quitCh:             make(chan int, 1),
-		superNode:          neb.Config().Chain.SuperNode,
-		unsupportedKeyword: neb.Config().Chain.UnsupportedKeyword,
+		chainID:      neb.Config().Chain.ChainId,
+		genesis:      neb.Genesis(),
+		bkPool:       blockPool,
+		txPool:       txPool,
+		storage:      neb.Storage(),
+		eventEmitter: neb.EventEmitter(),
+		nvm:          neb.Nvm(),
+		nr:           neb.Nr(),
+		dip:          neb.Dip(),
+		quitCh:       make(chan int, 1),
+		superNode:    neb.Config().Chain.SuperNode,
 	}
 
 	bc.cachedBlocks, err = lru.New(128)
@@ -168,6 +166,11 @@ func NewBlockChain(neb Neblet) (*BlockChain, error) {
 	}
 
 	bc.detachedTailBlocks, err = lru.New(128)
+	if err != nil {
+		return nil, err
+	}
+
+	bc.reversibleBlocks, err = lru.New(128)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +236,13 @@ func (bc *BlockChain) loop() {
 			logging.CLog().Info("Stopped BlockChain.")
 			return
 		case <-timerChan:
-			bc.ConsensusHandler().UpdateLIB()
+			hashs := bc.reversibleBlocks.Keys()
+			reversibleHashs := make([]byteutils.Hash, len(hashs))
+			for k, v := range hashs {
+				hash, _ := v.(byteutils.HexHash).Hash()
+				reversibleHashs[k] = hash
+			}
+			bc.ConsensusHandler().UpdateLIB(reversibleHashs)
 			metricsLruCacheBlock.Update(int64(bc.cachedBlocks.Len()))
 			metricsLruTailBlock.Update(int64(bc.detachedTailBlocks.Len()))
 		}
@@ -300,6 +309,7 @@ func (bc *BlockChain) LIB() *Block {
 // SetLIB update the latest irrversible block
 func (bc *BlockChain) SetLIB(lib *Block) {
 	bc.lib = lib
+	bc.reversibleBlocks.Remove(lib.Hash().Hex())
 }
 
 // EventEmitter return the eventEmitter.
@@ -330,6 +340,7 @@ func (bc *BlockChain) revertBlocks(from *Block, to *Block) error {
 			"block": reverted,
 		}).Warn("A block is reverted.")
 		revertTimes++
+		bc.reversibleBlocks.Remove(reverted.Hash().Hex())
 		blocks = append(blocks, reverted.String())
 
 		reverted = bc.GetBlock(reverted.header.parentHash)
@@ -368,6 +379,16 @@ func (bc *BlockChain) triggerNewTailInfo(blocks []*Block) {
 					bc.eventEmitter.Trigger(e)
 				}
 			}
+			if v.Type() == TxPayloadPodType {
+				payload, _ := v.LoadPayload()
+				podPayload := payload.(*PodPayload)
+				if podPayload.Action == PoDState {
+					bc.eventEmitter.Trigger(&state.Event{
+						Topic: TopicPodStateUpdate,
+						Data:  strconv.FormatInt(podPayload.Serial, 10),
+					})
+				}
+			}
 		}
 	}
 }
@@ -379,6 +400,7 @@ func (bc *BlockChain) buildIndexByBlockHeight(from *Block, to *Block) error {
 		if err != nil {
 			return err
 		}
+		bc.reversibleBlocks.Add(to.Hash().Hex(), to)
 		blocks = append(blocks, to)
 		go bc.dropTxsInBlockFromTxPool(to)
 		to = bc.GetBlock(to.header.parentHash)
@@ -746,7 +768,7 @@ func (bc *BlockChain) GasPrice() *util.Uint128 {
 		}
 	} else {
 		// if no transactions have been submitted, use the default gasPrice
-		gasPrice = TransactionGasPrice
+		gasPrice = bc.txPool.GetMinGasPrice()
 	}
 
 	return gasPrice
@@ -757,6 +779,23 @@ type SimulateResult struct {
 	GasUsed *util.Uint128
 	Msg     string
 	Err     error
+}
+
+// SimulateCallContract simulate call contract
+func (bc *BlockChain) SimulateCallContract(contract *Address, function, args string) (*SimulateResult, error) {
+	callpayload, err := NewCallPayload(function, args)
+	if err != nil {
+		return nil, err
+	}
+	payload, err := callpayload.ToBytes()
+	if err != nil {
+		return nil, err
+	}
+	tx, err := NewTransaction(bc.chainID, NebulasRewardAddress, contract, util.NewUint128(), 1, TxPayloadCallType, payload, TransactionGasPrice, TransactionMaxGas)
+	if err != nil {
+		return nil, err
+	}
+	return bc.SimulateTransactionExecution(tx)
 }
 
 // SimulateTransactionExecution execute transaction in sandbox and rollback all changes, used to EstimateGas and Call api.
@@ -885,4 +924,121 @@ func (bc *BlockChain) LoadLIBFromStorage() (*Block, error) {
 	}
 
 	return LoadBlockFromStorage(hash, bc)
+}
+
+func (bc *BlockChain) statisticalSerial() int64 {
+	if bc.chainID == MainNetID {
+		return 0 //TODO: need to update
+	} else if bc.chainID == TestNetID {
+		return 17712
+	} else {
+		return 0
+	}
+}
+
+// StatisticalLastBlocks statistical last block states
+func (bc *BlockChain) StatisticalLastBlocks(serial int64, block *Block) ([]*Statistics, error) {
+	logging.VLog().WithFields(logrus.Fields{
+		"serial":     serial,
+		"tail":       bc.TailBlock(),
+		"tailSerial": bc.ConsensusHandler().Serial(bc.TailBlock().Timestamp()),
+	}).Debug("start block statistics")
+
+	start := time.Now().Unix()
+
+	statistics := make([]*Statistics, 0)
+	if serial > 0 {
+		lastSerial := serial - 1
+
+		// find last serial blocks
+		for bc.ConsensusHandler().Serial(block.Timestamp()) > lastSerial {
+			block = bc.GetBlock(block.ParentHash())
+			if block == nil {
+				return nil, ErrBlockNotFound
+			}
+		}
+
+		dynastyRoot, err := block.DynastyRoot()
+		if err != nil {
+			return nil, err
+		}
+
+		for {
+			preDynastyRoot, err := block.DynastyRoot()
+			if err != nil {
+				return nil, err
+			}
+			//
+			if !byteutils.Equal(dynastyRoot, preDynastyRoot) {
+				break
+			}
+
+			blockSerial := bc.ConsensusHandler().Serial(block.Timestamp())
+
+			if blockSerial < int64(NodeStartSerial()) {
+				break
+			}
+
+			for blockSerial <= lastSerial {
+				item := &Statistics{
+					Serial:     lastSerial,
+					Statistics: make(map[string]int),
+				}
+				// find block in this serial
+				if blockSerial == lastSerial {
+					dynasty, err := block.Dynasty()
+					if err != nil {
+						return nil, err
+					}
+					for _, v := range dynasty {
+						addr, err := AddressParseFromBytes(v)
+						if err != nil {
+							return nil, err
+						}
+						item.Statistics[addr.String()] = 0
+					}
+				}
+				statistics = append(statistics, item)
+				//logging.VLog().WithFields(logrus.Fields{
+				//	"serial":      serial,
+				//	"blockSerial": blockSerial,
+				//	"block":       block,
+				//	"lastSerial":  lastSerial,
+				//	"item":        item,
+				//}).Debug("block statistics init")
+				lastSerial--
+			}
+
+			item := statistics[len(statistics)-1]
+			item.Start = block.height
+			miner := block.Miner().String()
+			item.Statistics[miner] = item.Statistics[miner] + 1
+
+			//logging.VLog().WithFields(logrus.Fields{
+			//	"serial":      serial,
+			//	"blockSerial": blockSerial,
+			//	"height":      block.height,
+			//	"miner":       miner,
+			//	"item":        item,
+			//}).Debug("block statistics record")
+
+			block = bc.GetBlock(block.ParentHash())
+			if block == nil {
+				return nil, ErrBlockNotFound
+			}
+			// start block statistics after pod launch
+			if !NodeUpdateAtHeight(block.height) {
+				break
+			}
+		}
+	}
+
+	logging.VLog().WithFields(logrus.Fields{
+		"serial":   serial,
+		"size":     len(statistics),
+		"data":     statistics,
+		"tail":     bc.TailBlock(),
+		"duration": time.Now().Unix() - start,
+	}).Debug("block statistics.")
+	return statistics, nil
 }

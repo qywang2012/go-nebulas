@@ -23,9 +23,9 @@ import (
 
 	"github.com/nebulasio/go-nebulas/common/trie"
 	"github.com/nebulasio/go-nebulas/core"
-	"github.com/nebulasio/go-nebulas/core/pb"
+	corepb "github.com/nebulasio/go-nebulas/core/pb"
 	"github.com/nebulasio/go-nebulas/storage"
-	"github.com/nebulasio/go-nebulas/sync/pb"
+	syncpb "github.com/nebulasio/go-nebulas/sync/pb"
 
 	"github.com/nebulasio/go-nebulas/util/byteutils"
 	"github.com/nebulasio/go-nebulas/util/logging"
@@ -259,7 +259,7 @@ func verifyChunkData(chunkHeader *syncpb.ChunkHeader, chunkData *syncpb.ChunkDat
 				"chunkHeader.size":     len(chunkHeader.Headers),
 				"data.header.hash":     byteutils.Hex(block.Header.Hash),
 				"data.calculated.hash": byteutils.Hex(calculated),
-				"err": ErrInvalidBlockHashInChunk,
+				"err":                  ErrInvalidBlockHashInChunk,
 			}).Debug("Invalid block hash.")
 			return false, ErrInvalidBlockHashInChunk
 		}
@@ -290,7 +290,8 @@ func verifyChunkData(chunkHeader *syncpb.ChunkHeader, chunkData *syncpb.ChunkDat
 	return true, nil
 }
 
-func (c *Chunk) processChunkData(chunk *syncpb.ChunkData) error {
+func (c *Chunk) processChunkData(chunk *syncpb.ChunkData) (*core.Block, error) {
+	var last *core.Block
 	for k, v := range chunk.Blocks {
 		block := new(core.Block)
 		if err := block.FromProto(v); err != nil {
@@ -299,7 +300,7 @@ func (c *Chunk) processChunkData(chunk *syncpb.ChunkData) error {
 				"hash":  byteutils.Hex(v.Header.Hash),
 				"err":   err,
 			}).Debug("Failed to recover a block from proto data.")
-			return err
+			return nil, err
 		}
 		if err := c.blockChain.BlockPool().Push(block); err != nil {
 			logging.VLog().WithFields(logrus.Fields{
@@ -307,12 +308,13 @@ func (c *Chunk) processChunkData(chunk *syncpb.ChunkData) error {
 				"hash":  byteutils.Hex(v.Header.Hash),
 				"err":   err,
 			}).Debug("Failed to push a block into block pool.")
-			return err
+			return nil, err
 		}
+		last = block
 	}
 
 	logging.VLog().WithFields(logrus.Fields{
 		"size": len(chunk.Blocks),
 	}).Debug("Succeed to process chunk.")
-	return nil
+	return last, nil
 }

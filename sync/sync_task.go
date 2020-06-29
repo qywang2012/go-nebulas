@@ -26,12 +26,12 @@ import (
 	"sync"
 	"time"
 
+	syncpb "github.com/nebulasio/go-nebulas/sync/pb"
 	"github.com/nebulasio/go-nebulas/util/byteutils"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/nebulasio/go-nebulas/core"
 	"github.com/nebulasio/go-nebulas/net"
-	"github.com/nebulasio/go-nebulas/sync/pb"
 	"github.com/nebulasio/go-nebulas/util/logging"
 	"github.com/sirupsen/logrus"
 )
@@ -83,7 +83,7 @@ func NewTask(blockChain *core.BlockChain, netService net.Service, chunk *Chunk) 
 		quitCh:                                  make(chan bool, 1),
 		statusCh:                                make(chan bool, 1),
 		blockChain:                              blockChain,
-		syncPointBlock:                          blockChain.TailBlock(),
+		syncPointBlock:                          blockChain.LIB(),
 		netService:                              netService,
 		chunk:                                   chunk,
 		chainSyncPeers:                          nil,
@@ -149,6 +149,7 @@ func (st *Task) startSyncLoop() {
 		// start get chunk data.
 		logging.VLog().Info("Starting GetChainData from peers.")
 
+		st.chainSyncRetryCount = 0
 		st.sendChunkDataRequest()
 
 		getChunkTimeoutTicker := time.NewTicker(10 * time.Second)
@@ -160,6 +161,16 @@ func (st *Task) startSyncLoop() {
 				logging.VLog().Info("Stopped sync loop.")
 				return
 			case <-getChunkTimeoutTicker.C:
+				if st.chainSyncRetryCount > GetChunkDataTimeout {
+					logging.CLog().WithFields(logrus.Fields{
+						"from":                st.syncPointBlock,
+						"chainSyncPeers":      st.chainSyncPeers,
+						"chainSyncRetryCount": st.chainSyncRetryCount,
+					}).Warn("Get chunk data timeout. Go to next one.")
+					st.reset()
+					st.setSyncPointToNewTail()
+					break SYNC_STEP_2
+				}
 				// for the timeout peer, send message again.
 				st.checkChainGetChunkTimeout()
 			case <-st.chinGetChunkDataDoneCh:
@@ -199,7 +210,9 @@ func (st *Task) reset() {
 
 func (st *Task) setSyncPointToNewTail() {
 	st.chainSyncRetryCount = 0
-	st.syncPointBlock = st.blockChain.TailBlock()
+	if st.syncPointBlock.Height() > st.blockChain.TailBlock().Height() {
+		st.syncPointBlock = st.blockChain.TailBlock()
+	}
 }
 
 func (st *Task) setSyncPointToLastChunk() {
@@ -370,6 +383,13 @@ func (st *Task) checkChainGetChunkTimeout() {
 	st.syncMutex.Lock()
 	defer st.syncMutex.Unlock()
 
+	logging.VLog().WithFields(logrus.Fields{
+		"syncPointBlockHeight": st.syncPointBlock.Height(),
+		"syncPointBlockHash":   st.syncPointBlock.Hash().String(),
+	}).Infof("Get Chunk at %d times.", st.chainSyncRetryCount)
+
+	st.chainSyncRetryCount++
+
 	for i := 0; i <= st.chainChunkDataSyncPosition; i++ {
 		t := st.chainChunkDataStatus[i]
 
@@ -473,7 +493,8 @@ func (st *Task) processChunkData(message net.Message) {
 	chunk, ok := st.chainChunkData[st.chainChunkDataProcessPosition]
 	for ok {
 		// startAt := time.Now().Unix()
-		if err := st.chunk.processChunkData(chunk); err != nil {
+		last, err := st.chunk.processChunkData(chunk)
+		if err != nil {
 			logging.VLog().WithFields(logrus.Fields{
 				"err": err,
 				"pid": message.MessageFrom(),
@@ -483,6 +504,7 @@ func (st *Task) processChunkData(message net.Message) {
 			return
 		}
 
+		st.syncPointBlock = last
 		st.chainChunkDataProcessPosition++
 		chunk, ok = st.chainChunkData[st.chainChunkDataProcessPosition]
 	}

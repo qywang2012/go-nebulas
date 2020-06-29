@@ -23,17 +23,17 @@ import (
 	"time"
 
 	"github.com/nebulasio/go-nebulas/crypto/keystore"
+	nebletpb "github.com/nebulasio/go-nebulas/neblet/pb"
 
 	"github.com/nebulasio/go-nebulas/util/byteutils"
 
+	corepb "github.com/nebulasio/go-nebulas/core/pb"
 	"github.com/nebulasio/go-nebulas/core/state"
 	"github.com/nebulasio/go-nebulas/net"
 
 	"regexp"
 
-	"github.com/nebulasio/go-nebulas/consensus/pb"
-	"github.com/nebulasio/go-nebulas/core/pb"
-	"github.com/nebulasio/go-nebulas/neblet/pb"
+	consensuspb "github.com/nebulasio/go-nebulas/consensus/pb"
 	"github.com/nebulasio/go-nebulas/storage"
 	"github.com/nebulasio/go-nebulas/util"
 )
@@ -45,6 +45,7 @@ const (
 	TxPayloadCallType     = "call"
 	TxPayloadProtocolType = "protocol"
 	TxPayloadDipType      = "dip"
+	TxPayloadPodType      = "pod"
 )
 
 // Const.
@@ -56,6 +57,11 @@ const (
 // Const
 const (
 	ContractAcceptFunc = "accept"
+)
+
+const (
+	NrStartHeight    = 2307000
+	NrIntervalHeight = 40320
 )
 
 var (
@@ -105,6 +111,7 @@ var (
 	ErrDoubleBlockMinted      = errors.New("double block minted")
 	ErrVRFProofFailed         = errors.New("VRF proof failed")
 	ErrInvalidBlockRandom     = errors.New("invalid block random")
+	ErrInvalidBlockProposer   = errors.New("invalid block proposer")
 
 	ErrInvalidChainID           = errors.New("invalid transaction chainID")
 	ErrInvalidTransactionSigner = errors.New("invalid transaction signer")
@@ -183,10 +190,18 @@ var (
 	ErrCreateInnerTx        = errors.New("Failed to create inner transaction")
 
 	// access control
-	ErrUnsupportedKeyword    = errors.New("transaction data has unsupported keyword")
-	ErrUnsupportedFunction   = errors.New("transaction payload has unsupported function")
-	ErrRestrictedFromAddress = errors.New("transaction from address is restricted")
-	ErrRestrictedToAddress   = errors.New("transaction to address is restricted")
+	ErrUnsupportedKeyword      = errors.New("transaction data has unsupported keyword")
+	ErrUnsupportedFunction     = errors.New("transaction payload has unsupported function")
+	ErrRestrictedFromAddress   = errors.New("transaction from address is restricted")
+	ErrRestrictedToAddress     = errors.New("transaction to address is restricted")
+	ErrNrc20ArgsCheckFailed    = errors.New("transaction nrc20 args check failed")
+	ErrNrc20AddressCheckFailed = errors.New("transaction nrc20 address check failed")
+	ErrNrc20ValueCheckFailed   = errors.New("transaction nrc20 value check failed")
+
+	// func deprecated
+	ErrFuncDeprecated = errors.New("function deprecated")
+
+	ErrBlockStateCheckFailed = errors.New("Failed to check block state")
 )
 
 // Default gas count
@@ -226,9 +241,10 @@ type Consensus interface {
 	SuspendMining()
 	Pending() bool
 
+	Serial(timestamp int64) int64
 	VerifyBlock(*Block) error
 	ForkChoice() error
-	UpdateLIB()
+	UpdateLIB([]byteutils.Hash)
 
 	NewState(*consensuspb.ConsensusRoot, storage.Storage, bool) (state.ConsensusState, error)
 	GenesisConsensusState(*BlockChain, *corepb.Genesis) (state.ConsensusState, error)
@@ -298,7 +314,6 @@ type Neblet interface {
 	IsActiveSyncing() bool
 	AccountManager() AccountManager
 	Nvm() NVM
-	Nbre() Nbre
 	Nr() NR
 	Dip() Dip
 	StartPprof(string) error
@@ -339,11 +354,8 @@ type Nbre interface {
 }
 
 type NR interface {
-	GetNRByAddress(addr *Address) (Data, error)
 	GetNRListByHeight(height uint64) (Data, error)
 	GetNRSummary(height uint64) (Data, error)
-	GetNRHandle(start, end, version uint64) (string, error)
-	GetNRListByHandle(hash []byte) (Data, error)
 }
 
 type Dip interface {

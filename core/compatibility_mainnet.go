@@ -35,10 +35,26 @@ type CompatibilityMainNet struct {
 	nvmValueCheckUpdateHeight uint64
 
 	nbreAvailableHeight uint64
+
+	nrc20SecurityCheckHeight uint64
+
+	nbreSplitHeight uint64
+
+	nodeUpdateHeight uint64
+
+	nodeStartSerial        uint64
+	nodeAccessContract     *Address
+	nodePodContract        *Address
+	nodeGovernanceContract *Address
 }
 
 // NewCompatibilityMainNet ..
 func NewCompatibilityMainNet() Compatibility {
+
+	nodeAccessContract, _ := AddressParse("n1q34gr6v7egCGvijvPzRB6QnA32tEvoLAS")
+	nodePodContract, _ := AddressParse("n22CMMXaxkAjjbsWtVXSmFJgEsnVZ3UwUWf")
+	nodeGovernanceContract, _ := AddressParse("n1yGGVFXRQSkN3QrCp8Rbu3F618iLsDgMaT")
+
 	return &CompatibilityMainNet{
 		transferFromContractEventRecordableHeight:        225666,
 		acceptFuncAvailableHeight:                        225666,
@@ -63,6 +79,14 @@ func NewCompatibilityMainNet() Compatibility {
 		transferFromContractFailureEventRecordableHeight2: 600000,
 		nvmValueCheckUpdateHeight:                         2188985,
 		nbreAvailableHeight:                               2307000,
+		nrc20SecurityCheckHeight:                          2517131,
+		nbreSplitHeight:                                   2856400,
+		nodeUpdateHeight:                                  4202000,
+
+		nodeStartSerial:        20009,
+		nodeAccessContract:     nodeAccessContract,
+		nodePodContract:        nodePodContract,
+		nodeGovernanceContract: nodeGovernanceContract,
 	}
 }
 
@@ -149,4 +173,39 @@ func (c *CompatibilityMainNet) NvmValueCheckUpdateHeight() uint64 {
 // NbreAvailableHeight ..
 func (c *CompatibilityMainNet) NbreAvailableHeight() uint64 {
 	return c.nbreAvailableHeight
+}
+
+// Nrc20SecurityCheckHeight ..
+func (c *CompatibilityMainNet) Nrc20SecurityCheckHeight() uint64 {
+	return c.nrc20SecurityCheckHeight
+}
+
+// NbreSplitHeight ..
+func (c *CompatibilityMainNet) NbreSplitHeight() uint64 {
+	return c.nbreSplitHeight
+}
+
+// NodeUpdateHeight ..
+func (c *CompatibilityMainNet) NodeUpdateHeight() uint64 {
+	return c.nodeUpdateHeight
+}
+
+// NodeStartSerial ..
+func (c *CompatibilityMainNet) NodeStartSerial() uint64 {
+	return c.nodeStartSerial
+}
+
+// NodeAccessContract ..
+func (c *CompatibilityMainNet) NodeAccessContract() *Address {
+	return c.nodeAccessContract
+}
+
+// NodePodContract ..
+func (c *CompatibilityMainNet) NodePodContract() *Address {
+	return c.nodePodContract
+}
+
+// NodeGovernanceContract ..
+func (c *CompatibilityMainNet) NodeGovernanceContract() *Address {
+	return c.nodeGovernanceContract
 }

@@ -22,13 +22,13 @@ import (
 	"time"
 
 	"github.com/nebulasio/go-nebulas/rpc"
-	"github.com/nebulasio/go-nebulas/rpc/pb"
+	rpcpb "github.com/nebulasio/go-nebulas/rpc/pb"
 	"golang.org/x/net/context"
 
 	"github.com/nebulasio/go-nebulas/core/state"
 	"github.com/nebulasio/go-nebulas/crypto/keystore"
 
-	"github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru"
 	"github.com/nebulasio/go-nebulas/core"
 	"github.com/nebulasio/go-nebulas/net"
 	"github.com/nebulasio/go-nebulas/util/byteutils"
@@ -197,7 +197,7 @@ func (dpos *Dpos) ForkChoice() error {
 }
 
 // UpdateLIB update the latest irrversible block
-func (dpos *Dpos) UpdateLIB() {
+func (dpos *Dpos) UpdateLIB(rversibleBlocks []byteutils.Hash) {
 	lib := dpos.chain.LIB()
 	tail := dpos.chain.TailBlock()
 	cur := tail
@@ -310,6 +310,11 @@ func (dpos *Dpos) CheckDoubleMint(block *core.Block) bool {
 		}
 	}
 	return false
+}
+
+// Serial return dynasty serial number
+func (pod *Dpos) Serial(timestamp int64) int64 {
+	return GenesisDynastySerial
 }
 
 // VerifyBlock verify the block
